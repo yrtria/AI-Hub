@@ -312,7 +312,7 @@ function cleanOldMessages(retentionDays) {
 
 // Stats
 function getStats() {
-  const agentCount = db.prepare('SELECT COUNT(*) as count FROM agents WHERE status != "banned"').get().count
+  const agentCount = db.prepare("SELECT COUNT(*) as count FROM agents WHERE status != 'banned'").get().count
   const messageCount = db.prepare('SELECT COUNT(*) as count FROM messages').get().count
   const channelCount = db.prepare('SELECT COUNT(*) as count FROM channels').get().count
   
