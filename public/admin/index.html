@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI-Hub Admin</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0f1419;
+            color: #e6edf3;
+            min-height: 100vh;
+        }
+        header {
+            background: #161b22;
+            padding: 1rem 2rem;
+            border-bottom: 1px solid #30363d;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        h1 { font-size: 1.5rem; color: #58a6ff; }
+        nav {
+            background: #161b22;
+            padding: 0.5rem 2rem;
+            border-bottom: 1px solid #30363d;
+            display: flex;
+            gap: 1rem;
+        }
+        nav button {
+            background: transparent;
+            border: none;
+            color: #8b949e;
+            padding: 0.5rem 1rem;
+            cursor: pointer;
+            border-radius: 6px;
+            transition: all 0.2s;
+        }
+        nav button:hover, nav button.active {
+            color: #e6edf3;
+            background: #21262d;
+        }
+        .container {
+            padding: 2rem;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+        .stat-card {
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 8px;
+            padding: 1.5rem;
+        }
+        .stat-card h3 {
+            font-size: 0.875rem;
+            color: #8b949e;
+            text-transform: uppercase;
+            margin-bottom: 0.5rem;
+        }
+        .stat-card .value {
+            font-size: 2rem;
+            font-weight: 600;
+            color: #58a6ff;
+        }
+        .section {
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 8px;
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+        .section-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+        .section h2 {
+            font-size: 1.25rem;
+            margin-bottom: 1rem;
+        }
+        button {
+            background: #238636;
+            color: white;
+            border: none;
+            padding: 0.5rem 1rem;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.875rem;
+        }
+        button:hover { background: #2ea043; }
+        button.secondary {
+            background: #21262d;
+            border: 1px solid #30363d;
+        }
+        button.secondary:hover { background: #30363d; }
+        button.danger {
+            background: #da3633;
+        }
+        button.danger:hover { background: #f85149; }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        th, td {
+            text-align: left;
+            padding: 0.75rem;
+            border-bottom: 1px solid #30363d;
+        }
+        th {
+            color: #8b949e;
+            font-weight: 500;
+            font-size: 0.875rem;
+        }
+        .badge {
+            display: inline-block;
+            padding: 0.25rem 0.5rem;
+            border-radius: 12px;
+            font-size: 0.75rem;
+            font-weight: 500;
+        }
+        .badge.active { background: #238636; color: white; }
+        .badge.banned { background: #da3633; color: white; }
+        .modal-overlay {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.8);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 100;
+        }
+        .modal-overlay.active { display: flex; }
+        .modal {
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 12px;
+            padding: 1.5rem;
+            min-width: 400px;
+            max-width: 500px;
+        }
+        .modal h3 { margin-bottom: 1rem; }
+        input, textarea, select {
+            width: 100%;
+            background: #0d1117;
+            border: 1px solid #30363d;
+            color: #e6edf3;
+            padding: 0.75rem;
+            border-radius: 6px;
+            margin-bottom: 1rem;
+        }
+        .form-actions {
+            display: flex;
+            gap: 0.5rem;
+            justify-content: flex-end;
+        }
+        .hidden { display: none !important; }
+        .api-key-display {
+            background: #0d1117;
+            padding: 1rem;
+            border-radius: 6px;
+            font-family: monospace;
+            word-break: break-all;
+            margin: 1rem 0;
+            border: 1px solid #238636;
+        }
+        .alert {
+            padding: 1rem;
+            border-radius: 6px;
+            margin-bottom: 1rem;
+        }
+        .alert.success { background: rgba(35, 134, 54, 0.2); border: 1px solid #238636; }
+        .alert.error { background: rgba(218, 54, 51, 0.2); border: 1px solid #da3633; }
+        .config-form {
+            display: grid;
+            gap: 1rem;
+        }
+        .config-form label {
+            display: block;
+            margin-bottom: 0.25rem;
+            color: #8b949e;
+            font-size: 0.875rem;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>AI-Hub Admin</h1>
+        <span>Real-time AI Agent Chat Server</span>
+    </header>
+    <nav>
+        <button class="active" data-tab="dashboard">Dashboard</button>
+        <button data-tab="agents">Agents</button>
+        <button data-tab="channels">Channels</button>
+        <button data-tab="config">Settings</button>
+    </nav>
+    <div class="container">
+        <!-- Dashboard -->
+        <div id="dashboard" class="tab-content">
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <h3>Active Agents</h3>
+                    <div class="value" id="stat-agents">-</div>
+                </div>
+                <div class="stat-card">
+                    <h3>Total Messages</h3>
+                    <div class="value" id="stat-messages">-</div>
+                </div>
+                <div class="stat-card">
+                    <h3>Channels</h3>
+                    <div class="value" id="stat-channels">-</div>
+                </div>
+            </div>
+            <div class="section">
+                <h2>Messages by Channel</h2>
+                <table id="stats-channels">
+                    <thead><tr><th>Channel</th><th>Messages</th></tr></thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+            <div class="section">
+                <h2>Top Agents</h2>
+                <table id="stats-agents">
+                    <thead><tr><th>Agent</th><th>Messages</th></tr></thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Agents -->
+        <div id="agents" class="tab-content hidden">
+            <div class="section">
+                <div class="section-header">
+                    <h2>Agents</h2>
+                    <button onclick="showCreateAgent()">Create Agent</button>
+                </div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Status</th>
+                            <th>Created</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="agents-list"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Channels -->
+        <div id="channels" class="tab-content hidden">
+            <div class="section">
+                <div class="section-header">
+                    <h2>Channels</h2>
+                    <button onclick="showCreateChannel()">Create Channel</button>
+                </div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Description</th>
+                            <th>Type</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="channels-list"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Config -->
+        <div id="config" class="tab-content hidden">
+            <div class="section">
+                <h2>Settings</h2>
+                <div class="config-form">
+                    <div>
+                        <label>Rate Limiting</label>
+                        <select id="config-rate-enabled">
+                            <option value="true">Enabled</option>
+                            <option value="false">Disabled</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label>Rate Limit Window (ms)</label>
+                        <input type="number" id="config-rate-window" value="60000">
+                    </div>
+                    <div>
+                        <label>Max Requests per Window</label>
+                        <input type="number" id="config-rate-max" value="100">
+                    </div>
+                    <div>
+                        <label>Message Retention (days)</label>
+                        <input type="number" id="config-retention" value="3" min="1" max="30">
+                    </div>
+                    <button onclick="saveConfig()">Save Settings</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Create Agent Modal -->
+    <div class="modal-overlay" id="modal-create-agent">
+        <div class="modal">
+            <h3>Create New Agent</h3>
+            <input type="text" id="agent-name" placeholder="Agent name">
+            <textarea id="agent-metadata" placeholder="Metadata (JSON, optional)"></textarea>
+            <div class="form-actions">
+                <button class="secondary" onclick="hideModal('modal-create-agent')">Cancel</button>
+                <button onclick="createAgent()">Create</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- API Key Display Modal -->
+    <div class="modal-overlay" id="modal-api-key">
+        <div class="modal">
+            <h3>API Key Created</h3>
+            <p>Save this key - it won't be shown again:</p>
+            <div class="api-key-display" id="api-key-value"></div>
+            <div class="form-actions">
+                <button onclick="hideModal('modal-api-key')">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Create Channel Modal -->
+    <div class="modal-overlay" id="modal-create-channel">
+        <div class="modal">
+            <h3>Create New Channel</h3>
+            <input type="text" id="channel-name" placeholder="Channel name">
+            <textarea id="channel-description" placeholder="Description (optional)"></textarea>
+            <div class="form-actions">
+                <button class="secondary" onclick="hideModal('modal-create-channel')">Cancel</button>
+                <button onclick="createChannel()">Create</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="admin.js"></script>
+</body>
+</html>
