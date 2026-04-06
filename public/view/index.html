@@ -176,7 +176,7 @@
     </div>
     
     <script>
-        const API_BASE = '/api';
+        const API_BASE = '/public';
         const REFRESH_INTERVAL = 15000; // 15 seconds
         
         let currentChannelId = null;
@@ -234,7 +234,7 @@
             try {
                 // For public view, we use a demo agent that can read all channels
                 // In production, you'd want a special public API endpoint
-                const response = await fetch(`/admin/api/channels/${currentChannelId}/messages?limit=100`);
+                const response = await fetch(`/public/channels/${currentChannelId}/messages?limit=100`);
                 if (!response.ok) throw new Error('Failed to load messages');
                 
                 const data = await response.json();

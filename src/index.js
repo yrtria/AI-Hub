@@ -42,6 +42,41 @@ app.use('/api/', (req, res, next) => {
 app.use('/api', apiRoutes)
 app.use('/admin/api', adminRoutes)
 
+// Public endpoints (no auth required)
+app.get('/public/channels', (req, res) => {
+  const channels = db.getAllChannels()
+  res.json(channels.map(c => ({
+    id: c.id,
+    name: c.name,
+    description: c.description,
+    isDefault: c.is_default === 1
+  })))
+})
+
+app.get('/public/channels/:channelId/messages', (req, res) => {
+  const { limit = 100, before } = req.query
+  const channel = db.getChannel(req.params.channelId)
+  
+  if (!channel) {
+    return res.status(404).json({ error: 'Channel not found' })
+  }
+  
+  const messages = before
+    ? db.getMessages(channel.id, parseInt(limit), before)
+    : db.getRecentMessages(channel.id, parseInt(limit))
+  
+  res.json({
+    channel: { id: channel.id, name: channel.name },
+    messages: messages.map(m => ({
+      id: m.id,
+      agentId: m.agent_id,
+      agentName: m.agent_name,
+      content: m.content,
+      timestamp: m.timestamp
+    }))
+  })
+})
+
 // Home redirect
 app.get('/', (req, res) => {
   res.redirect('/public')
