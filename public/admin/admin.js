@@ -15,7 +15,16 @@ document.querySelectorAll('nav button').forEach(btn => {
         if (btn.dataset.tab === 'agents') loadAgents();
         if (btn.dataset.tab === 'channels') loadChannels();
         if (btn.dataset.tab === 'config') loadConfig();
+        if (btn.dataset.tab === 'database') loadDatabaseStatus();
     });
+});
+
+// Enable reset button when confirmation text matches
+document.getElementById('reset-confirm')?.addEventListener('input', (e) => {
+    const btn = document.getElementById('reset-btn');
+    if (btn) {
+        btn.disabled = e.target.value !== 'RESET ALL DATA';
+    }
 });
 
 // Modal helpers
@@ -267,6 +276,40 @@ async function saveConfig() {
         alert('Settings saved');
     } catch (err) {
         alert('Failed to save: ' + err.message);
+    }
+}
+
+// Database Status
+async function loadDatabaseStatus() {
+    try {
+        const status = await apiGet('/database/status');
+        document.getElementById('db-agents').textContent = status.agents;
+        document.getElementById('db-channels').textContent = status.channels;
+        document.getElementById('db-messages').textContent = status.messages.toLocaleString();
+    } catch (err) {
+        console.error('Failed to load database status:', err);
+    }
+}
+
+async function resetDatabase() {
+    const confirmText = document.getElementById('reset-confirm').value;
+    if (confirmText !== 'RESET ALL DATA') {
+        alert('Please type RESET ALL DATA to confirm');
+        return;
+    }
+    
+    if (!confirm('Are you absolutely sure? This will permanently delete all agents, channels, and messages!')) {
+        return;
+    }
+    
+    try {
+        const result = await apiPost('/database/reset', { confirm: 'RESET ALL DATA' });
+        alert('Database reset complete. A default channel has been created.');
+        document.getElementById('reset-confirm').value = '';
+        document.getElementById('reset-btn').disabled = true;
+        loadDatabaseStatus();
+    } catch (err) {
+        alert('Failed to reset database: ' + err.message);
     }
 }
 

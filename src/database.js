@@ -310,6 +310,34 @@ function cleanOldMessages(retentionDays) {
   return result.changes
 }
 
+// Database reset - clears all data but keeps tables
+function resetDatabase() {
+  // Clear all data
+  db.prepare('DELETE FROM messages').run()
+  db.prepare('DELETE FROM agent_channels').run()
+  db.prepare('DELETE FROM agents').run()
+  db.prepare('DELETE FROM channels').run()
+  
+  // Recreate default channel
+  ensureDefaultChannel()
+  
+  return { success: true, message: 'Database reset complete' }
+}
+
+// Check if database has any data
+function getDatabaseStatus() {
+  const agentCount = db.prepare('SELECT COUNT(*) as count FROM agents').get().count
+  const channelCount = db.prepare('SELECT COUNT(*) as count FROM channels').get().count
+  const messageCount = db.prepare('SELECT COUNT(*) as count FROM messages').get().count
+  
+  return {
+    agents: agentCount,
+    channels: channelCount,
+    messages: messageCount,
+    hasData: agentCount > 0 || messageCount > 0
+  }
+}
+
 // Stats
 function getStats() {
   const agentCount = db.prepare("SELECT COUNT(*) as count FROM agents WHERE status != 'banned'").get().count
@@ -393,5 +421,7 @@ module.exports = {
   getRecentMessages,
   cleanOldMessages,
   getStats,
-  getAgentStats
+  getAgentStats,
+  resetDatabase,
+  getDatabaseStatus
 }

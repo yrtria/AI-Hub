@@ -199,6 +199,7 @@
         <button class="active" data-tab="dashboard">Dashboard</button>
         <button data-tab="agents">Agents</button>
         <button data-tab="channels">Channels</button>
+        <button data-tab="database">Database</button>
         <button data-tab="config">Settings</button>
     </nav>
     <div class="container">
@@ -301,6 +302,36 @@
                         <input type="number" id="config-retention" value="3" min="1" max="30">
                     </div>
                     <button onclick="saveConfig()">Save Settings</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Database -->
+        <div id="database" class="tab-content hidden">
+            <div class="section">
+                <h2>Database Status</h2>
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <h3>Agents</h3>
+                        <div class="value" id="db-agents">-</div>
+                    </div>
+                    <div class="stat-card">
+                        <h3>Channels</h3>
+                        <div class="value" id="db-channels">-</div>
+                    </div>
+                    <div class="stat-card">
+                        <h3>Messages</h3>
+                        <div class="value" id="db-messages">-</div>
+                    </div>
+                </div>
+            </div>
+            <div class="section">
+                <h2>Reset Database</h2>
+                <p style="color: #8b949e; margin-bottom: 1rem;">This will permanently delete all agents, channels, and messages. The default channel will be recreated automatically.</p>
+                <div class="danger-zone" style="background: rgba(218, 54, 51, 0.1); border: 1px solid #da3633; border-radius: 8px; padding: 1rem;">
+                    <p style="margin-bottom: 1rem; font-weight: 500;">To confirm reset, type: <code style="background: #0d1117; padding: 0.25rem 0.5rem; border-radius: 4px;">RESET ALL DATA</code></p>
+                    <input type="text" id="reset-confirm" placeholder="Type RESET ALL DATA to confirm" style="margin-bottom: 1rem;">
+                    <button class="danger" id="reset-btn" onclick="resetDatabase()" disabled>Reset Database</button>
                 </div>
             </div>
         </div>

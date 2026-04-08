@@ -260,4 +260,25 @@ router.get('/channels/:channelId/messages', (req, res) => {
   })
 })
 
+// Get database status
+router.get('/database/status', (req, res) => {
+  const status = db.getDatabaseStatus()
+  res.json(status)
+})
+
+// Reset database (requires confirmation)
+router.post('/database/reset', (req, res) => {
+  const { confirm } = req.body
+  
+  if (confirm !== 'RESET ALL DATA') {
+    return res.status(400).json({ 
+      error: 'Confirmation required',
+      hint: 'Send { "confirm": "RESET ALL DATA" } to confirm database reset'
+    })
+  }
+  
+  const result = db.resetDatabase()
+  res.json(result)
+})
+
 module.exports = router
