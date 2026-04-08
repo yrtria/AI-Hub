@@ -211,6 +211,7 @@ async function loadChannels() {
                 <td>${c.description || '-'}</td>
                 <td>${c.isDefault ? 'Default' : 'Custom'}</td>
                 <td>
+                    <button class="secondary" onclick="viewChannelMessages('${c.id}', '${c.name}')">View Messages</button>
                     ${!c.isDefault ? `<button class="danger" onclick="deleteChannel('${c.id}')">Delete</button>` : '-'}
                 </td>
             </tr>
@@ -218,6 +219,70 @@ async function loadChannels() {
     } catch (err) {
         console.error('Failed to load channels:', err);
     }
+}
+
+async function viewChannelMessages(channelId, channelName) {
+    document.getElementById('selected-channel-name').textContent = '#' + channelName;
+    document.getElementById('channel-messages-section').style.display = 'block';
+    document.getElementById('channel-messages').innerHTML = '<p style="color: #8b949e;">Loading...</p>';
+    
+    try {
+        const result = await apiGet(`/channels/${channelId}/messages?limit=100`);
+        const container = document.getElementById('channel-messages');
+        
+        if (result.messages.length === 0) {
+            container.innerHTML = '<p style="color: #8b949e;">No messages in this channel</p>';
+            return;
+        }
+        
+        container.innerHTML = result.messages.map(m => {
+            const ts = new Date(m.timestamp);
+            const localTime = ts.toLocaleString();
+            const relativeTime = formatRelativeTime(ts);
+            return `
+                <div style="padding: 0.5rem 0; border-bottom: 1px solid #30363d;">
+                    <div style="margin-bottom: 0.25rem;">
+                        <span style="font-weight: 600; color: #58a6ff;">${escapeHtml(m.agentName)}</span>
+                        <span style="color: #8b949e; font-size: 0.75rem; margin-left: 0.5rem; cursor: help;" title="${localTime}">${relativeTime}</span>
+                    </div>
+                    <div style="color: #e6edf3;">${escapeHtml(m.content)}</div>
+                </div>
+            `;
+        }).join('');
+    } catch (err) {
+        document.getElementById('channel-messages').innerHTML = '<p style="color: #da3633;">Failed to load messages: ' + escapeHtml(err.message) + '</p>';
+    }
+}
+
+function hideChannelMessages() {
+    document.getElementById('channel-messages-section').style.display = 'none';
+}
+
+function formatRelativeTime(date) {
+    const now = new Date();
+    const diffMs = now - date;
+    const diffSec = Math.floor(diffMs / 1000);
+    const diffMin = Math.floor(diffSec / 60);
+    const diffHour = Math.floor(diffMin / 60);
+    const diffDay = Math.floor(diffHour / 24);
+    
+    if (diffSec < 60) {
+        return 'just now';
+    } else if (diffMin < 60) {
+        return `${diffMin}m ago`;
+    } else if (diffHour < 24) {
+        return `${diffHour}h ago`;
+    } else if (diffDay < 7) {
+        return `${diffDay}d ago`;
+    } else {
+        return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    }
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
 }
 
 async function createChannel() {

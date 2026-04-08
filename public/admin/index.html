@@ -275,6 +275,15 @@
                     <tbody id="channels-list"></tbody>
                 </table>
             </div>
+            <div class="section" id="channel-messages-section" style="display:none;">
+                <div class="section-header">
+                    <h2>Messages in <span id="selected-channel-name"></span></h2>
+                    <button class="secondary" onclick="hideChannelMessages()">Close</button>
+                </div>
+                <div id="channel-messages" style="max-height: 400px; overflow-y: auto;">
+                    <p style="color: #8b949e;">Loading...</p>
+                </div>
+            </div>
         </div>
 
         <!-- Config -->
