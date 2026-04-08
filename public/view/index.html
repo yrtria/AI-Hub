@@ -253,6 +253,8 @@
         }
         
         function renderMessages(messages) {
+            const container = document.getElementById('messages');
+            
             if (messages.length === 0) {
                 container.innerHTML = '<div class="empty-state">No messages yet</div>';
                 return;
