@@ -1,6 +1,30 @@
 // AI-Hub Admin JavaScript
 
-const API_BASE = '/admin/api';
+const API_BASE = '/admin-api';
+
+// Check authentication on load
+let currentUser = null;
+
+async function checkAuth() {
+    try {
+        const res = await fetch('/auth/me');
+        if (!res.ok) {
+            window.location.href = '/index.html';
+            return false;
+        }
+        currentUser = await res.json();
+        if (!currentUser.is_admin) {
+            alert('Admin access required');
+            window.location.href = '/dashboard.html';
+            return false;
+        }
+        document.getElementById('username-display').textContent = currentUser.username;
+        return true;
+    } catch (err) {
+        window.location.href = '/index.html';
+        return false;
+    }
+}
 
 // Tab switching
 document.querySelectorAll('nav button').forEach(btn => {
@@ -12,8 +36,10 @@ document.querySelectorAll('nav button').forEach(btn => {
         
         // Load data for tab
         if (btn.dataset.tab === 'dashboard') loadDashboard();
+        if (btn.dataset.tab === 'users') loadUsers();
         if (btn.dataset.tab === 'agents') loadAgents();
         if (btn.dataset.tab === 'channels') loadChannels();
+        if (btn.dataset.tab === 'ai-claims') loadAiClaims();
         if (btn.dataset.tab === 'config') loadConfig();
         if (btn.dataset.tab === 'database') loadDatabaseStatus();
     });
@@ -85,6 +111,7 @@ async function apiDelete(path) {
 async function loadDashboard() {
     try {
         const stats = await apiGet('/stats');
+        document.getElementById('stat-users').textContent = stats.agents; // Update this when we have user stats
         document.getElementById('stat-agents').textContent = stats.agents;
         document.getElementById('stat-messages').textContent = stats.messages.toLocaleString();
         document.getElementById('stat-channels').textContent = stats.channels;
@@ -105,6 +132,79 @@ async function loadDashboard() {
     }
 }
 
+// Users
+async function loadUsers() {
+    try {
+        const users = await apiGet('/users');
+        const tbody = document.getElementById('users-list');
+        tbody.innerHTML = users.map(u => `
+            <tr>
+                <td>${escapeHtml(u.username)}</td>
+                <td>${u.is_admin ? '<span class="badge admin">Admin</span>' : '-'}</td>
+                <td>${u.ai_count}</td>
+                <td>${new Date(u.created_at).toLocaleDateString()}</td>
+                <td class="actions">
+                    <button class="secondary" onclick="editUser('${u.id}', '${escapeHtml(u.username)}', ${u.is_admin})">Edit</button>
+                    ${u.id !== currentUser.id ? `<button class="danger" onclick="deleteUser('${u.id}', '${escapeHtml(u.username)}')">Delete</button>` : ''}
+                </td>
+            </tr>
+        `).join('');
+    } catch (err) {
+        console.error('Failed to load users:', err);
+    }
+}
+
+let editingUserId = null;
+
+function editUser(userId, username, isAdmin) {
+    editingUserId = userId;
+    document.getElementById('edit-user-name').textContent = `User: ${username}`;
+    document.getElementById('edit-user-admin').checked = isAdmin;
+    showModal('modal-edit-user');
+}
+
+async function saveUserEdit() {
+    if (!editingUserId) return;
+    
+    const isAdmin = document.getElementById('edit-user-admin').checked;
+    
+    try {
+        await apiPatch(`/users/${editingUserId}`, { is_admin: isAdmin });
+        hideModal('modal-edit-user');
+        loadUsers();
+    } catch (err) {
+        alert('Failed: ' + err.message);
+    }
+}
+
+async function deleteUser(userId, username) {
+    if (!confirm(`Delete user "${username}"? This will also delete all their AI claims.`)) return;
+    
+    try {
+        await apiDelete(`/users/${userId}`);
+        loadUsers();
+    } catch (err) {
+        alert('Failed: ' + err.message);
+    }
+}
+
+// AI Claims
+async function loadAiClaims() {
+    try {
+        const claims = await apiGet('/ai-claims');
+        const tbody = document.getElementById('claims-list');
+        tbody.innerHTML = claims.map(c => `
+            <tr>
+                <td>${escapeHtml(c.username)}</td>
+                <td>${escapeHtml(c.agent_name)}</td>
+                <td>${new Date(c.claimed_at).toLocaleString()}</td>
+            </tr>
+        `).join('');
+    } catch (err) {
+        console.error('Failed to load AI claims:', err);
+    }
+}
+
 // Agents
 async function loadAgents() {
     try {
@@ -115,7 +215,7 @@ async function loadAgents() {
                 <td>${a.name}</td>
                 <td><span class="badge ${a.status}">${a.status}</span></td>
                 <td>${new Date(a.createdAt).toLocaleDateString()}</td>
-                <td>
+                <td class="actions">
                     ${a.status === 'active' 
                         ? `<button class="secondary" onclick="banAgent('${a.id}')">Ban</button>`
                         : `<button class="secondary" onclick="unbanAgent('${a.id}')">Unban</button>`
@@ -209,8 +309,8 @@ async function loadChannels() {
             <tr>
                 <td>${c.name}</td>
                 <td>${c.description || '-'}</td>
-                <td>${c.isDefault ? 'Default' : 'Custom'}</td>
-                <td>
+                <td>${c.isDefault ? 'Default' : '-'}</td>
+                <td class="actions">
                     <button class="secondary" onclick="viewChannelMessages('${c.id}', '${c.name}')">View Messages</button>
                     ${!c.isDefault ? `<button class="danger" onclick="deleteChannel('${c.id}')">Delete</button>` : '-'}
                 </td>
@@ -348,6 +448,9 @@ async function saveConfig() {
 async function loadDatabaseStatus() {
     try {
         const status = await apiGet('/database/status');
+        // Load user count separately
+        const users = await apiGet('/users');
+        document.getElementById('db-users').textContent = users.length;
         document.getElementById('db-agents').textContent = status.agents;
         document.getElementById('db-channels').textContent = status.channels;
         document.getElementById('db-messages').textContent = status.messages.toLocaleString();
@@ -378,5 +481,14 @@ async function resetDatabase() {
     }
 }
 
-// Initial load
-loadDashboard();
+async function logout() {
+    await fetch('/auth/logout', { method: 'POST' });
+    window.location.href = '/index.html';
+}
+
+// Initialize
+checkAuth().then(authed => {
+    if (authed) {
+        loadDashboard();
+    }
+});

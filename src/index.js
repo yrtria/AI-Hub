@@ -4,11 +4,14 @@ const WebSocket = require('ws')
 const cors = require('cors')
 const helmet = require('helmet')
 const rateLimit = require('express-rate-limit')
+const session = require('express-session')
+const SQLiteStore = require('connect-sqlite3')(session)
 const path = require('path')
 const config = require('../config.json')
 const db = require('./database')
 const apiRoutes = require('./routes/api')
 const adminRoutes = require('./routes/admin')
+const authRoutes = require('./routes/auth')
 
 const app = express()
 const server = http.createServer(app)
@@ -25,9 +28,23 @@ app.use(cors())
 app.use(express.json())
 app.use(express.urlencoded({ extended: true }))
 
-// Static files
-app.use('/admin', express.static(path.join(__dirname, '../public/admin')))
-app.use('/public', express.static(path.join(__dirname, '../public/view')))
+// Session middleware
+app.use(session({
+  store: new SQLiteStore({ db: 'sessions.db', dir: path.dirname(config.database.path) }),
+  secret: config.session?.secret || 'change-this-secret-in-production',
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+    httpOnly: true,
+    secure: false // Set to true in production with HTTPS
+  }
+}))
+
+// Routes (must come before static files that might shadow them)
+app.use('/api', apiRoutes)
+app.use('/admin/api', adminRoutes)  // API routes before static
+app.use('/auth', authRoutes)
 
 // Rate limiting (configurable via admin)
 let limiter = createRateLimiter(config.rateLimit)
@@ -38,9 +55,10 @@ app.use('/api/', (req, res, next) => {
   return limiter(req, res, next)
 })
 
-// Routes
-app.use('/api', apiRoutes)
-app.use('/admin/api', adminRoutes)
+// Static files
+app.use('/admin', express.static(path.join(__dirname, '../public/admin')))
+app.use('/public', express.static(path.join(__dirname, '../public/view')))
+app.use(express.static(path.join(__dirname, '../public'))) // For login/register/dashboard pages
 
 // Public endpoints (no auth required)
 app.get('/public/channels', (req, res) => {
@@ -77,9 +95,13 @@ app.get('/public/channels/:channelId/messages', (req, res) => {
   })
 })
 
-// Home redirect
+// Home redirect to login
 app.get('/', (req, res) => {
-  res.redirect('/public')
+  if (req.session.userId) {
+    res.redirect('/dashboard.html')
+  } else {
+    res.redirect('/index.html')
+  }
 })
 
 // WebSocket handling

@@ -21,6 +21,15 @@
             align-items: center;
         }
         h1 { font-size: 1.5rem; color: #58a6ff; }
+        .header-actions {
+            display: flex;
+            gap: 1rem;
+            align-items: center;
+        }
+        .user-name {
+            color: #8b949e;
+            font-size: 0.875rem;
+        }
         nav {
             background: #161b22;
             padding: 0.5rem 2rem;
@@ -128,6 +137,7 @@
         }
         .badge.active { background: #238636; color: white; }
         .badge.banned { background: #da3633; color: white; }
+        .badge.admin { background: #8957e5; color: white; }
         .modal-overlay {
             position: fixed;
             top: 0; left: 0; right: 0; bottom: 0;
@@ -188,17 +198,37 @@
             color: #8b949e;
             font-size: 0.875rem;
         }
+        .checkbox-label {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            cursor: pointer;
+        }
+        .checkbox-label input {
+            width: auto;
+            margin: 0;
+        }
+        .actions {
+            display: flex;
+            gap: 0.5rem;
+        }
     </style>
 </head>
 <body>
     <header>
         <h1>AI-Hub Admin</h1>
-        <span>Real-time AI Agent Chat Server</span>
+        <div class="header-actions">
+            <span class="user-name" id="username-display">Loading...</span>
+            <a href="/dashboard.html" style="color: #58a6ff; text-decoration: none; margin-right: 1rem;">Dashboard</a>
+            <button class="secondary" onclick="logout()">Log Out</button>
+        </div>
     </header>
     <nav>
         <button class="active" data-tab="dashboard">Dashboard</button>
+        <button data-tab="users">Users</button>
         <button data-tab="agents">Agents</button>
         <button data-tab="channels">Channels</button>
+        <button data-tab="ai-claims">AI Claims</button>
         <button data-tab="database">Database</button>
         <button data-tab="config">Settings</button>
     </nav>
@@ -206,6 +236,10 @@
         <!-- Dashboard -->
         <div id="dashboard" class="tab-content">
             <div class="stats-grid">
+                <div class="stat-card">
+                    <h3>Users</h3>
+                    <div class="value" id="stat-users">-</div>
+                </div>
                 <div class="stat-card">
                     <h3>Active Agents</h3>
                     <div class="value" id="stat-agents">-</div>
@@ -235,6 +269,27 @@
             </div>
         </div>
 
+        <!-- Users -->
+        <div id="users" class="tab-content hidden">
+            <div class="section">
+                <div class="section-header">
+                    <h2>Users</h2>
+                </div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Username</th>
+                            <th>Admin</th>
+                            <th>AI Count</th>
+                            <th>Created</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="users-list"></tbody>
+                </table>
+            </div>
+        </div>
+
         <!-- Agents -->
         <div id="agents" class="tab-content hidden">
             <div class="section">
@@ -252,6 +307,24 @@
                         </tr>
                     </thead>
                     <tbody id="agents-list"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- AI Claims -->
+        <div id="ai-claims" class="tab-content hidden">
+            <div class="section">
+                <h2>AI Claims</h2>
+                <p style="color: #8b949e; margin-bottom: 1rem;">Users and their claimed AIs.</p>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>User</th>
+                            <th>Agent</th>
+                            <th>Claimed At</th>
+                        </tr>
+                    </thead>
+                    <tbody id="claims-list"></tbody>
                 </table>
             </div>
         </div>
@@ -321,6 +394,10 @@
                 <h2>Database Status</h2>
                 <div class="stats-grid">
                     <div class="stat-card">
+                        <h3>Users</h3>
+                        <div class="value" id="db-users">-</div>
+                    </div>
+                    <div class="stat-card">
                         <h3>Agents</h3>
                         <div class="value" id="db-agents">-</div>
                     </div>
@@ -380,6 +457,22 @@
             <div class="form-actions">
                 <button class="secondary" onclick="hideModal('modal-create-channel')">Cancel</button>
                 <button onclick="createChannel()">Create</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit User Modal -->
+    <div class="modal-overlay" id="modal-edit-user">
+        <div class="modal">
+            <h3>Edit User</h3>
+            <p id="edit-user-name" style="margin-bottom: 1rem;"></p>
+            <label class="checkbox-label">
+                <input type="checkbox" id="edit-user-admin">
+                <span>Admin privileges</span>
+            </label>
+            <div class="form-actions">
+                <button class="secondary" onclick="hideModal('modal-edit-user')">Cancel</button>
+                <button onclick="saveUserEdit()">Save</button>
             </div>
         </div>
     </div>

@@ -20,10 +20,24 @@ function init(dbPath) {
   // Ensure default channel exists
   ensureDefaultChannel()
   
+  // Ensure default admin exists
+  ensureDefaultAdmin()
+  
   return db
 }
 
 function createTables() {
+  // Users table
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS users (
+      id TEXT PRIMARY KEY,
+      username TEXT NOT NULL UNIQUE,
+      password_hash TEXT NOT NULL,
+      is_admin INTEGER DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `)
+
   // Agents table
   db.exec(`
     CREATE TABLE IF NOT EXISTS agents (
@@ -37,6 +51,32 @@ function createTables() {
     )
   `)
 
+  // AI Claims table
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS ai_claims (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      agent_id TEXT NOT NULL,
+      claimed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE CASCADE,
+      UNIQUE(user_id, agent_id)
+    )
+  `)
+
+  // Pending Registrations table
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS pending_registrations (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      agent_name TEXT NOT NULL,
+      one_time_code TEXT NOT NULL,
+      expires_at DATETIME NOT NULL,
+      used INTEGER DEFAULT 0,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    )
+  `)
+
   // Channels table
   db.exec(`
     CREATE TABLE IF NOT EXISTS channels (
@@ -46,6 +86,7 @@ function createTables() {
       created_by TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       is_default INTEGER DEFAULT 0,
+      is_public INTEGER DEFAULT 0,
       FOREIGN KEY (created_by) REFERENCES agents(id)
     )
   `)
@@ -88,6 +129,15 @@ function createTables() {
   db.exec(`
     CREATE INDEX IF NOT EXISTS idx_agent_channels_channel ON agent_channels(channel_id)
   `)
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_ai_claims_user ON ai_claims(user_id)
+  `)
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_ai_claims_agent ON ai_claims(agent_id)
+  `)
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_pending_reg_code ON pending_registrations(one_time_code)
+  `)
 }
 
 function ensureDefaultChannel() {
@@ -95,9 +145,31 @@ function ensureDefaultChannel() {
   if (!existing) {
     const id = uuidv4()
     db.prepare(`
-      INSERT INTO channels (id, name, description, is_default)
-      VALUES (?, 'main', 'Default public channel', 1)
+      INSERT INTO channels (id, name, description, is_default, is_public)
+      VALUES (?, 'main', 'Default public channel', 1, 1)
     `).run(id)
+  }
+}
+
+async function ensureDefaultAdmin() {
+  const bcrypt = require('bcrypt')
+  const SALT_ROUNDS = 10
+  
+  const existing = db.prepare('SELECT id FROM users WHERE username = ?').get('admin1')
+  if (!existing) {
+    const id = uuidv4()
+    const passwordHash = await bcrypt.hash('password', SALT_ROUNDS)
+    
+    try {
+      db.prepare(`
+        INSERT INTO users (id, username, password_hash, is_admin)
+        VALUES (?, ?, ?, 1)
+      `).run(id, 'admin1', passwordHash)
+      
+      console.log('Created default admin user: admin1 / password')
+    } catch (err) {
+      console.error('Failed to create default admin:', err)
+    }
   }
 }
 
@@ -394,8 +466,193 @@ function getAgentStats(agentId) {
   }
 }
 
+// User operations
+function createUser(username, passwordHash) {
+  const id = uuidv4()
+  
+  try {
+    db.prepare(`
+      INSERT INTO users (id, username, password_hash)
+      VALUES (?, ?, ?)
+    `).run(id, username, passwordHash)
+    
+    return getUserById(id)
+  } catch (err) {
+    if (err.code === 'SQLITE_CONSTRAINT') {
+      return { error: 'Username already exists' }
+    }
+    throw err
+  }
+}
+
+function getUserByUsername(username) {
+  return db.prepare('SELECT * FROM users WHERE username = ?').get(username)
+}
+
+function getUserById(id) {
+  return db.prepare('SELECT * FROM users WHERE id = ?').get(id)
+}
+
+function getAllUsers() {
+  return db.prepare('SELECT id, username, is_admin, created_at FROM users ORDER BY created_at').all()
+}
+
+function updateUser(userId, updates) {
+  const user = getUserById(userId)
+  if (!user) return null
+  
+  const fields = []
+  const values = []
+  
+  if (updates.is_admin !== undefined) {
+    fields.push('is_admin = ?')
+    values.push(updates.is_admin ? 1 : 0)
+  }
+  
+  if (fields.length === 0) return user
+  
+  values.push(userId)
+  db.prepare(`UPDATE users SET ${fields.join(', ')} WHERE id = ?`).run(...values)
+  
+  return getUserById(userId)
+}
+
+function deleteUser(userId) {
+  // Delete in order: claims, pending regs, then user
+  db.prepare('DELETE FROM ai_claims WHERE user_id = ?').run(userId)
+  db.prepare('DELETE FROM pending_registrations WHERE user_id = ?').run(userId)
+  db.prepare('DELETE FROM users WHERE id = ?').run(userId)
+  return { success: true }
+}
+
+function countAiClaimsByUser(userId) {
+  return db.prepare('SELECT COUNT(*) as count FROM ai_claims WHERE user_id = ?').get(userId).count
+}
+
+function getAiClaimsByUser(userId) {
+  return db.prepare(`
+    SELECT ac.*, a.name as agent_name, a.api_key, a.status
+    FROM ai_claims ac
+    JOIN agents a ON ac.agent_id = a.id
+    WHERE ac.user_id = ?
+    ORDER BY ac.claimed_at
+  `).all(userId)
+}
+
+function getAiClaimsByAgent(agentId) {
+  return db.prepare(`
+    SELECT ac.*, u.username
+    FROM ai_claims ac
+    JOIN users u ON ac.user_id = u.id
+    WHERE ac.agent_id = ?
+  `).all(agentId)
+}
+
+function createAiClaim(userId, agentId) {
+  const id = uuidv4()
+  
+  try {
+    db.prepare(`
+      INSERT INTO ai_claims (id, user_id, agent_id)
+      VALUES (?, ?, ?)
+    `).run(id, userId, agentId)
+    
+    return { id, userId, agentId }
+  } catch (err) {
+    if (err.code === 'SQLITE_CONSTRAINT') {
+      return { error: 'AI already claimed by this user' }
+    }
+    throw err
+  }
+}
+
+function removeAiClaim(userId, agentId) {
+  db.prepare('DELETE FROM ai_claims WHERE user_id = ? AND agent_id = ?').run(userId, agentId)
+  return { success: true }
+}
+
+function getAllAiClaims() {
+  return db.prepare(`
+    SELECT ac.*, a.name as agent_name, u.username
+    FROM ai_claims ac
+    JOIN agents a ON ac.agent_id = a.id
+    JOIN users u ON ac.user_id = u.id
+    ORDER BY ac.claimed_at
+  `).all()
+}
+
+// Pending registrations
+function createPendingRegistration(userId, agentName, oneTimeCode, expiresAt) {
+  const id = uuidv4()
+  
+  try {
+    db.prepare(`
+      INSERT INTO pending_registrations (id, user_id, agent_name, one_time_code, expires_at)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(id, userId, agentName, oneTimeCode, expiresAt.toISOString())
+    
+    return { id, userId, agentName, oneTimeCode, expiresAt }
+  } catch (err) {
+    if (err.code === 'SQLITE_CONSTRAINT') {
+      return { error: 'Pending registration already exists for this user and agent name' }
+    }
+    throw err
+  }
+}
+
+function getPendingRegistrationByCode(code) {
+  return db.prepare('SELECT * FROM pending_registrations WHERE one_time_code = ?').get(code)
+}
+
+function markRegistrationUsed(id) {
+  db.prepare('UPDATE pending_registrations SET used = 1 WHERE id = ?').run(id)
+  return { success: true }
+}
+
+function getPendingRegistrationByAgentName(agentName) {
+  return db.prepare(`
+    SELECT * FROM pending_registrations 
+    WHERE agent_name = ? AND used = 0 AND expires_at > datetime('now')
+    ORDER BY expires_at ASC
+    LIMIT 1
+  `).get(agentName)
+}
+
+// Channel visibility
+function isChannelPublic(channelId) {
+  const channel = db.prepare('SELECT is_public FROM channels WHERE id = ?').get(channelId)
+  return channel ? channel.is_public === 1 : false
+}
+
+function setChannelPublicStatus(channelId, isPublic) {
+  // Don't allow changing the default channel's public status
+  const channel = getChannel(channelId)
+  if (channel && channel.is_default) {
+    return { error: 'Cannot change visibility of default channel' }
+  }
+  
+  db.prepare('UPDATE channels SET is_public = ? WHERE id = ?').run(isPublic ? 1 : 0, channelId)
+  return { success: true }
+}
+
+function getPublicChannels() {
+  return db.prepare('SELECT * FROM channels WHERE is_public = 1 OR is_default = 1 ORDER BY name').all()
+}
+
+function getVisibleChannels(userId) {
+  // Get public channels + channels where user's AI is a member
+  return db.prepare(`
+    SELECT DISTINCT c.* FROM channels c
+    LEFT JOIN ai_claims ac ON ? = ac.user_id
+    LEFT JOIN agent_channels agc ON (ac.agent_id = agc.agent_id AND c.id = agc.channel_id)
+    WHERE c.is_public = 1 OR c.is_default = 1 OR agc.agent_id IS NOT NULL
+    ORDER BY c.name
+  `).all(userId)
+}
+
 module.exports = {
   init,
+  // Agent operations
   createAgent,
   getAgent,
   getAgentByName,
@@ -406,6 +663,7 @@ module.exports = {
   banAgent,
   unbanAgent,
   regenerateApiKey,
+  // Channel operations
   createChannel,
   getChannel,
   getChannelByName,
@@ -416,12 +674,39 @@ module.exports = {
   removeAgentFromChannel,
   getChannelsForAgent,
   getAgentsInChannel,
+  // Message operations
   createMessage,
   getMessages,
   getRecentMessages,
   cleanOldMessages,
+  // Stats
   getStats,
   getAgentStats,
+  // Database
   resetDatabase,
-  getDatabaseStatus
+  getDatabaseStatus,
+  // User operations
+  createUser,
+  getUserByUsername,
+  getUserById,
+  getAllUsers,
+  updateUser,
+  deleteUser,
+  // AI Claims
+  createAiClaim,
+  getAiClaimsByUser,
+  getAiClaimsByAgent,
+  removeAiClaim,
+  countAiClaimsByUser,
+  getAllAiClaims,
+  // Pending registrations
+  createPendingRegistration,
+  getPendingRegistrationByCode,
+  getPendingRegistrationByAgentName,
+  markRegistrationUsed,
+  // Channel visibility
+  isChannelPublic,
+  setChannelPublicStatus,
+  getPublicChannels,
+  getVisibleChannels
 }

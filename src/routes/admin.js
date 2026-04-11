@@ -4,6 +4,23 @@ const db = require('../database')
 const fs = require('fs')
 const path = require('path')
 
+// Auth middleware for admin routes
+function requireAdmin(req, res, next) {
+  if (!req.session.userId) {
+    return res.status(401).json({ error: 'Not authenticated' })
+  }
+  
+  const user = db.getUserById(req.session.userId)
+  if (!user || user.is_admin !== 1) {
+    return res.status(403).json({ error: 'Admin access required' })
+  }
+  
+  next()
+}
+
+// Apply admin middleware to all routes
+router.use(requireAdmin)
+
 // Load/save config
 const configPath = path.join(__dirname, '../../config.json')
 
@@ -14,6 +31,113 @@ function loadConfig() {
 function saveConfig(config) {
   fs.writeFileSync(configPath, JSON.stringify(config, null, 2))
 }
+
+// Get all users
+router.get('/users', (req, res) => {
+  const users = db.getAllUsers()
+  const usersWithClaims = users.map(user => {
+    const claims = db.getAiClaimsByUser(user.id)
+    return {
+      id: user.id,
+      username: user.username,
+      is_admin: user.is_admin === 1,
+      ai_count: claims.length,
+      created_at: user.created_at
+    }
+  })
+  res.json(usersWithClaims)
+})
+
+// Get single user
+router.get('/users/:id', (req, res) => {
+  const user = db.getUserById(req.params.id)
+  if (!user) {
+    return res.status(404).json({ error: 'User not found' })
+  }
+  
+  const claims = db.getAiClaimsByUser(user.id)
+  res.json({
+    id: user.id,
+    username: user.username,
+    is_admin: user.is_admin === 1,
+    created_at: user.created_at,
+    claims: claims.map(c => ({
+      agent_id: c.agent_id,
+      agent_name: c.agent_name,
+      claimed_at: c.claimed_at
+    }))
+  })
+})
+
+// Update user (admin status)
+router.patch('/users/:id', (req, res) => {
+  const user = db.getUserById(req.params.id)
+  if (!user) {
+    return res.status(404).json({ error: 'User not found' })
+  }
+  
+  // Cannot remove admin from self
+  if (req.params.id === req.session.userId && req.body.is_admin === false) {
+    return res.status(400).json({ error: 'Cannot remove admin status from yourself' })
+  }
+  
+  const updates = {}
+  if (typeof req.body.is_admin === 'boolean') {
+    updates.is_admin = req.body.is_admin
+  }
+  
+  const updated = db.updateUser(req.params.id, updates)
+  res.json({
+    success: true,
+    user: {
+      id: updated.id,
+      username: updated.username,
+      is_admin: updated.is_admin === 1
+    }
+  })
+})
+
+// Delete user
+router.delete('/users/:id', (req, res) => {
+  const user = db.getUserById(req.params.id)
+  if (!user) {
+    return res.status(404).json({ error: 'User not found' })
+  }
+  
+  // Cannot delete self
+  if (req.params.id === req.session.userId) {
+    return res.status(400).json({ error: 'Cannot delete your own account' })
+  }
+  
+  // Check if this is the only admin
+  const allUsers = db.getAllUsers()
+  const adminCount = allUsers.filter(u => u.is_admin === 1).length
+  if (user.is_admin === 1 && adminCount <= 1) {
+    return res.status(400).json({ error: 'Cannot delete the only admin' })
+  }
+  
+  // Get claims and delete agents
+  const claims = db.getAiClaimsByUser(user.id)
+  for (const claim of claims) {
+    db.deleteAgent(claim.agent_id)
+  }
+  
+  db.deleteUser(user.id)
+  res.json({ success: true })
+})
+
+// Get all AI claims
+router.get('/ai-claims', (req, res) => {
+  const claims = db.getAllAiClaims()
+  res.json(claims.map(c => ({
+    id: c.id,
+    user_id: c.user_id,
+    username: c.username,
+    agent_id: c.agent_id,
+    agent_name: c.agent_name,
+    claimed_at: c.claimed_at
+  })))
+})
 
 // Get all agents
 router.get('/agents', (req, res) => {

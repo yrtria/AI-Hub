@@ -1,5 +1,6 @@
 const express = require('express')
 const router = express.Router()
+const { v4: uuidv4 } = require('uuid')
 const db = require('../database')
 const config = require('../../config.json')
 
@@ -39,12 +40,19 @@ router.get('/me', validateApiKey, (req, res) => {
 
 // List available channels
 router.get('/channels', validateApiKey, (req, res) => {
-  const channels = db.getAllChannels()
-  res.json(channels.map(c => ({
+  // Get public channels and channels where agent is member
+  const publicChannels = db.getPublicChannels()
+  const agentChannels = db.getChannelsForAgent(req.agent.id)
+  
+  // Combine and deduplicate
+  const allChannels = [...new Map([...publicChannels, ...agentChannels].map(c => [c.id, c])).values()]
+  
+  res.json(allChannels.map(c => ({
     id: c.id,
     name: c.name,
     description: c.description,
-    isDefault: c.is_default === 1
+    isDefault: c.is_default === 1,
+    isPublic: c.is_public === 1
   })))
 })
 
@@ -74,12 +82,13 @@ router.get('/channels/:channelId/messages', validateApiKey, (req, res) => {
     return res.status(404).json({ error: 'Channel not found' })
   }
   
-  // Check if agent is in channel or if it's the default channel
+  // Check if channel is public, default, or agent is member
+  const isPublic = db.isChannelPublic(channel.id) || channel.is_default === 1
   const agentChannels = db.getChannelsForAgent(req.agent.id)
-  const inChannel = agentChannels.find(c => c.id === channel.id)
+  const inChannel = agentChannels.some(c => c.id === channel.id)
   
-  if (!inChannel && channel.id !== db.getDefaultChannel()?.id) {
-    return res.status(403).json({ error: 'Not a member of this channel' })
+  if (!isPublic && !inChannel) {
+    return res.status(403).json({ error: 'Not a member of this private channel' })
   }
   
   const messages = before
@@ -111,12 +120,13 @@ router.post('/channels/:channelId/messages', validateApiKey, (req, res) => {
     return res.status(404).json({ error: 'Channel not found' })
   }
   
-  // Check membership
+  // Check if channel is public, default, or agent is member
+  const isPublic = db.isChannelPublic(channel.id) || channel.is_default === 1
   const agentChannels = db.getChannelsForAgent(req.agent.id)
-  const inChannel = agentChannels.find(c => c.id === channel.id)
+  const inChannel = agentChannels.some(c => c.id === channel.id)
   
-  if (!inChannel && channel.id !== db.getDefaultChannel()?.id) {
-    return res.status(403).json({ error: 'Not a member of this channel' })
+  if (!isPublic && !inChannel) {
+    return res.status(403).json({ error: 'Not a member of this private channel' })
   }
   
   const message = db.createMessage({
@@ -152,7 +162,7 @@ router.get('/ws-info', validateApiKey, (req, res) => {
 
 // Create a new channel
 router.post('/channels', validateApiKey, (req, res) => {
-  const { name, description = '' } = req.body
+  const { name, description = '', isPublic = false } = req.body
   
   if (!name || typeof name !== 'string') {
     return res.status(400).json({ error: 'Channel name required' })
@@ -163,11 +173,13 @@ router.post('/channels', validateApiKey, (req, res) => {
     return res.status(409).json({ error: 'Channel name already exists' })
   }
   
-  const channel = db.createChannel({
-    name,
-    description,
-    createdBy: req.agent.id
-  })
+  const id = uuidv4()
+  db.prepare(`
+    INSERT INTO channels (id, name, description, created_by, is_public)
+    VALUES (?, ?, ?, ?, ?)
+  `).run(id, name, description, req.agent.id, isPublic ? 1 : 0)
+  
+  const channel = db.getChannel(id)
   
   // Auto-join creator to the channel
   db.addAgentToChannel(req.agent.id, channel.id)
@@ -177,9 +189,42 @@ router.post('/channels', validateApiKey, (req, res) => {
     channel: {
       id: channel.id,
       name: channel.name,
-      description: channel.description
+      description: channel.description,
+      isPublic: channel.is_public === 1
     }
   })
+})
+
+// Invite agent to private channel
+router.post('/channels/:channelId/invite', validateApiKey, (req, res) => {
+  const { agentId } = req.body
+  
+  if (!agentId) {
+    return res.status(400).json({ error: 'Agent ID required' })
+  }
+  
+  const channel = db.getChannel(req.params.channelId)
+  if (!channel) {
+    return res.status(404).json({ error: 'Channel not found' })
+  }
+  
+  // Only channel members can invite
+  const agentChannels = db.getChannelsForAgent(req.agent.id)
+  const inChannel = agentChannels.some(c => c.id === channel.id)
+  
+  if (!inChannel) {
+    return res.status(403).json({ error: 'Only channel members can invite' })
+  }
+  
+  // Check if target agent exists
+  const targetAgent = db.getAgent(agentId)
+  if (!targetAgent) {
+    return res.status(404).json({ error: 'Agent not found' })
+  }
+  
+  db.addAgentToChannel(agentId, channel.id)
+  
+  res.json({ success: true })
 })
 
 module.exports = router
